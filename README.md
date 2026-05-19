@@ -145,3 +145,43 @@ The platform enables a data analyst to:
                    +----------------------+
                    | React Dashboard      |
                    +----------------------+
+```
+
+# 4. Folder Structure 
+```
+lcip/
+├── .github/
+├── contracts/                 # Shared JSON/Protobuf schemas binding Python & .NET formats
+├── data/
+│   ├── raw/                   # API payloads
+│   ├── processed/             # Spatial-joined datasets
+│   ├── curated/               # Hierarchical-reconciled aggregates
+│   ├── features/              # Transformed lag & weather ML matrices
+│   └── shapefiles/            # Spatial polygons (Wards/LSOAs)
+├── src/
+│   ├── data_pipeline/
+│   │   ├── run_pipeline.py    # Pipeline execution master script
+│   │   ├── pipeline_state.py  # Checkpointing state for Met Police API throttling
+│   │   └── ...
+│   ├── ml_engine/
+│   │   ├── predict.py         # Standalone local inference script
+│   │   ├── registry/          # Serialized production artifacts (.pkl)
+│   │   ├── experiments/       # Tracking parameters (MASE metrics)
+│   │   └── ...
+│   ├── backend/
+│   │   ├── LCIP.Api/          # Minimal APIs, routing, and auth
+│   │   ├── LCIP.Application/  # Use cases, MediatR commands, business logic
+│   │   ├── LCIP.Domain/       # Core Domain Entities (Renamed from LCIP.Core)
+│   │   ├── LCIP.Infrastructure/# DB Context (Dapper), Ollama/Semantic Kernel integration
+│   │   └── LCIP.sln
+│   └── frontend/
+│       ├── services/          # Fetch clients mapping to C# endpoints
+│       ├── hooks/             # Custom React Query handles
+│       └── components/        # Plotly & OpenStreetMap UI layers
+└── docker/
+    ├── init/
+    │   └── db/                # Unified DB .sql initialization scripts
+    ├── observability/         # Prometheus/Grafana configs
+    └── docker-compose.yml     # Local system orchestrator
+
+```
