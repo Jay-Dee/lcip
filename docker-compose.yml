@@ -1,0 +1,105 @@
+services:
+
+  # =========================================================
+  # APPLICATION DATABASE
+  # =========================================================
+  postgres:
+    image: postgres:16
+    container_name: lcip-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # =========================================================
+  # AIRFLOW METADATA DATABASE
+  # =========================================================
+  airflow-postgres:
+    image: postgres:16
+    container_name: lcip-airflow-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+  # =========================================================
+  # AIRFLOW INIT
+  # =========================================================
+   # =========================================================
+  # AIRFLOW INIT
+  # =========================================================
+  airflow-init:
+    image: apache/airflow:2.9.3
+    container_name: lcip-airflow-init
+    depends_on:
+      - airflow-postgres
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname LCIP --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD}
+      "
+
+  # =========================================================
+  # AIRFLOW WEBSERVER
+  # =========================================================
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    container_name: lcip-airflow-webserver
+    restart: unless-stopped
+    depends_on:
+      - airflow-init
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: airflow webserver
+
+  # =========================================================
+  # AIRFLOW SCHEDULER
+  # =========================================================
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    container_name: lcip-airflow-scheduler
+    restart: unless-stopped
+    depends_on:
+      - airflow-webserver
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: airflow scheduler
+
+volumes:
+  postgres_data:
+  airflow_postgres_data:
