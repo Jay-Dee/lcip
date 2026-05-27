@@ -16,7 +16,7 @@ with DAG(
     description="LCIP Postgres health check DAG",
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
-    schedule_interval="*/1 * * * *",  # every minute
+    schedule_interval="*/5 * * * *",  # every 5 minutes
     catchup=False,
     tags=["lcip", "health", "postgres"],
 ) as dag:
