@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from lib.system.system_health import run_system_health_check
+from lib.system.system_health import get_system_health_status
 
 
 DEFAULT_ARGS = {
@@ -27,8 +27,8 @@ with DAG(
 ) as dag:
 
     system_health_task = PythonOperator(
-        task_id="check_local_system_health",
-        python_callable=run_system_health_check,
+        task_id="get_system_health_status",
+        python_callable=get_system_health_status,
     )
 
     system_health_task

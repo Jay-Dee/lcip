@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 
-from lib.db.postgres_db_health import postgres_health_check
+from lib.db.db_health import get_db_health_status
 
 
 default_args = {
@@ -12,8 +12,8 @@ default_args = {
 }
 
 with DAG(
-    dag_id="postgres_health_dag",
-    description="LCIP Postgres health check DAG",
+    dag_id="db_health_dag",
+    description="LCIP DB health check DAG",
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
     schedule_interval="*/5 * * * *",  # every 5 minutes
@@ -21,9 +21,9 @@ with DAG(
     tags=["lcip", "health", "postgres"],
 ) as dag:
 
-    check_db = PythonOperator(
-        task_id="postgres_health_check",
-        python_callable=postgres_health_check,
+    db_health_check_task = PythonOperator(
+        task_id="get_db_health_status",
+        python_callable=get_db_health_status,
     )
 
-    check_db
+    db_health_check_task
