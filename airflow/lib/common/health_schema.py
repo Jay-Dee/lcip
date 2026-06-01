@@ -6,7 +6,8 @@ from typing import Any, Dict, Literal
 
 Status = Literal["healthy", "warning", "unhealthy"]
 
-@dataclass
+
+@dataclass(frozen=True)
 class HealthEvent:
     component: str
     status: Status
@@ -24,9 +25,3 @@ class HealthEvent:
             "metrics": self.metrics,
             "meta": self.meta,
         }
-    
-    def __str__(self) -> str:
-        metrics_str = ", ".join(f"{k}={v}" for k, v in self.metrics.items())
-        meta_str = ", ".join(f"{k}={v}" for k, v in self.meta.items())
-        return (f"HealthEvent(component={self.component}, status={self.status}," 
-                f"timestamp={self.timestamp}, metrics={metrics_str}, meta={meta_str})")

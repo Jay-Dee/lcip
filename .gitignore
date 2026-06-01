@@ -133,3 +133,11 @@ secrets.py
 .idea/
 .vscode/
 .DS_Store
+
+# Ignore generic local library folders if needed
+lib/
+
+# But keep Airflow source libraries
+!airflow/lib/
+!airflow/lib/**/
+!airflow/lib/**/*.py
