@@ -1,10 +1,4 @@
-version: "3.8"
-
 services:
-
-  # =========================================================
-  # APPLICATION DATABASE (LCIP DATA)
-  # =========================================================
   postgres:
     image: postgres:16
     container_name: lcip-postgres
@@ -20,9 +14,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # =========================================================
-  # AIRFLOW METADATA DATABASE
-  # =========================================================
   airflow-postgres:
     image: postgres:16
     container_name: lcip-airflow-postgres
@@ -36,11 +27,11 @@ services:
     volumes:
       - airflow_postgres_data:/var/lib/postgresql/data
 
-  # =========================================================
-  # AIRFLOW INIT
-  # =========================================================
   airflow-init:
-    image: apache/airflow:2.9.3
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-init
     depends_on:
       - airflow-postgres
@@ -49,17 +40,29 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/lib:/opt/airflow/lib
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./.env:/opt/airflow/.env
     command: >
       bash -c "
-      airflow db init &&
-      airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname LCIP --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD}
+      airflow db migrate &&
+      airflow users create
+      --username ${AIRFLOW_ADMIN_USER}
+      --firstname LCIP
+      --lastname Admin
+      --role Admin
+      --email ${AIRFLOW_ADMIN_EMAIL}
+      --password ${AIRFLOW_ADMIN_PASSWORD}
+      || true
       "
 
-  # =========================================================
-  # AIRFLOW WEBSERVER
-  # =========================================================
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-webserver
     restart: unless-stopped
     depends_on:
@@ -70,6 +73,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       PYTHONPATH: /opt/airflow
     ports:
       - "8080:8080"
@@ -81,21 +85,19 @@ services:
       - ./.env:/opt/airflow/.env
     command: airflow webserver
 
-  # =========================================================
-  # AIRFLOW SCHEDULER
-  # =========================================================
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-scheduler
     restart: unless-stopped
     depends_on:
-      - airflow-webserver
+      - airflow-init
     env_file:
       - .env
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       PYTHONPATH: /opt/airflow
     volumes:
       - ./airflow/dags:/opt/airflow/dags
