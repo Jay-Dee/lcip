@@ -1,75 +1,120 @@
-version: "3.8"
-
 services:
-
   # =========================================================
-  # APPLICATION DATABASE (LCIP DATA)
+  # LCIP DOMAIN DATASTORE
+  # Stores application/domain data: crime data, derived features,
+  # health events, embeddings, and future LCIP product data.
   # =========================================================
-  postgres:
+  lcip-data-store:
     image: postgres:16
-    container_name: lcip-postgres
+    container_name: lcip-data-store
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${LCIP_DATA_STORE_USER}
+      POSTGRES_PASSWORD: ${LCIP_DATA_STORE_PASSWORD}
+      POSTGRES_DB: ${LCIP_DATA_STORE_DB}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - lcip_data_store:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LCIP_DATA_STORE_USER} -d ${LCIP_DATA_STORE_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # =========================================================
-  # AIRFLOW METADATA DATABASE
+  # AIRFLOW METADATA STORE
+  # Technical datastore owned by Airflow only.
+  # Do not use for LCIP domain/application data.
   # =========================================================
-  airflow-postgres:
+  airflow-metadata-store:
     image: postgres:16
-    container_name: lcip-airflow-postgres
+    container_name: lcip-airflow-metadata-store
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      POSTGRES_USER: ${AIRFLOW_DB_USER}
-      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
-      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+      POSTGRES_USER: ${AIRFLOW_METADATA_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_METADATA_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_METADATA_DB_NAME}
     volumes:
-      - airflow_postgres_data:/var/lib/postgresql/data
+      - airflow_metadata_store:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_METADATA_DB_USER} -d ${AIRFLOW_METADATA_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # =========================================================
   # AIRFLOW INIT
+  # One-shot technical setup: migrate metadata DB and create admin user.
   # =========================================================
   airflow-init:
-    image: apache/airflow:2.9.3
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-init
     depends_on:
-      - airflow-postgres
+      airflow-metadata-store:
+        condition: service_healthy
     env_file:
       - .env
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@airflow-metadata-store:5432/${AIRFLOW_METADATA_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    command: >
-      bash -c "
-      airflow db init &&
-      airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname LCIP --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD}
-      "
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/lib:/opt/airflow/lib
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./.env:/opt/airflow/.env:ro
+    command:
+    - bash
+    - -c
+    - |
+      set -e
+
+      airflow db upgrade
+
+      if airflow users list | awk '{print $2}' | grep -qx "${AIRFLOW_ADMIN_USER}"; then
+        airflow users reset-password \
+          --username "${AIRFLOW_ADMIN_USER}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}"
+      else
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USER}" \
+          --firstname LCIP \
+          --lastname Admin \
+          --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}"
+      fi
 
   # =========================================================
   # AIRFLOW WEBSERVER
   # =========================================================
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-webserver
     restart: unless-stopped
     depends_on:
-      - airflow-init
+      airflow-init:
+        condition: service_completed_successfully
+      lcip-data-store:
+        condition: service_healthy
     env_file:
       - .env
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@airflow-metadata-store:5432/${AIRFLOW_METADATA_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       PYTHONPATH: /opt/airflow
     ports:
       - "8080:8080"
@@ -78,33 +123,37 @@ services:
       - ./airflow/lib:/opt/airflow/lib
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
-      - ./.env:/opt/airflow/.env
+      - ./.env:/opt/airflow/.env:ro
     command: airflow webserver
 
   # =========================================================
   # AIRFLOW SCHEDULER
   # =========================================================
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    image: lcip-airflow:2.8.1
     container_name: lcip-airflow-scheduler
     restart: unless-stopped
     depends_on:
-      - airflow-webserver
+      airflow-init:
+        condition: service_completed_successfully
+      lcip-data-store:
+        condition: service_healthy
     env_file:
       - .env
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@airflow-metadata-store:5432/${AIRFLOW_METADATA_DB_NAME}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       PYTHONPATH: /opt/airflow
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/lib:/opt/airflow/lib
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
-      - ./.env:/opt/airflow/.env
+      - ./.env:/opt/airflow/.env:ro
     command: airflow scheduler
 
 volumes:
-  postgres_data:
-  airflow_postgres_data:
+  lcip_data_store:
+  airflow_metadata_store:
