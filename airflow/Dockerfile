@@ -1,5 +1,5 @@
-FROM apache/airflow:2.8.1
+FROM apache/airflow:2.9.3
 
 COPY requirements.txt /requirements.txt
 
-RUN pip install --no-cache-dir --user -r /requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt
