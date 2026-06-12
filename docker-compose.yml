@@ -55,7 +55,7 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
-    image: lcip-airflow:2.8.1
+    image: lcip-airflow
     container_name: lcip-airflow-init
     depends_on:
       airflow-metadata-store:
@@ -80,7 +80,7 @@ services:
     - |
       set -e
 
-      airflow db upgrade
+      airflow db migrate
 
       if airflow users list | awk '{print $2}' | grep -qx "${AIRFLOW_ADMIN_USER}"; then
         airflow users reset-password \
@@ -100,7 +100,10 @@ services:
   # AIRFLOW WEBSERVER
   # =========================================================
   airflow-webserver:
-    image: lcip-airflow:2.8.1
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: lcip-airflow
     container_name: lcip-airflow-webserver
     restart: unless-stopped
     depends_on:
@@ -130,7 +133,10 @@ services:
   # AIRFLOW SCHEDULER
   # =========================================================
   airflow-scheduler:
-    image: lcip-airflow:2.8.1
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: lcip-airflow
     container_name: lcip-airflow-scheduler
     restart: unless-stopped
     depends_on:
